@@ -1,54 +1,53 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.IO;
-using System.Linq;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using String = System.String;
 
 namespace MpegMetadata;
-internal class MpegFile(string filePath) {
+
+internal class MpegFile {
 
     // don't change casing
     private readonly JsonSerializerOptions myJsonOptions = new() { PropertyNamingPolicy = null};
     
-    public void Process() {
+    private string FilePath { get; }
 
-        var rawData = ReadData();
+    public ProgrammeInformation? Metadata { get; private set; }
 
-        var noMarks = RemoveFrameMarks(rawData);
+    public string Error { get; private set; } = "";
 
-        var noPadding = RemovePadding(noMarks);
+    public MpegFile(string filePath) {
+        FilePath = filePath;
+        ReadAndParseMetadata();
+    }
 
-        var json = System.Text.Encoding.ASCII.GetString(noPadding);
+    private void ReadAndParseMetadata() {
+        try {
+            Error = "";
+            var rawData = ReadData();
+            var noMarks = RemoveFrameMarks(rawData);
+            var noPadding = RemovePadding(noMarks);
+            var json = System.Text.Encoding.ASCII.GetString(noPadding);
+            Metadata = JsonSerializer.Deserialize<ProgrammeInformation>(json, myJsonOptions);
+        }
+        catch (Exception e) {
+            Metadata = null;
+            Error = e.Message;
+        }
+    }
 
-        var info = Deserialise(json);
-
-        info.ChannelAffiliate = "Blah"; // make a change!
-
-        json = Serialise(info);
-
+    public void WriteChanges() {
+        var json = JsonSerializer.Serialize(Metadata, myJsonOptions);
         var restored = ReplaceFrameMarks(ReplacePadding(Encoding.ASCII.GetBytes(json)));
-
         //for (var i = 0; i < rawData.Length; i++) {
         //    if (rawData[i] != restored[i]) {
         //        Console.WriteLine($"{i} - Different: {rawData[i]:X} -> {restored[i]:X}");
         //    }
         //}
-
         WriteBack(restored);
     }
 
-    private string Serialise(ProgrammeInformation info) {
-        return JsonSerializer.Serialize(info, myJsonOptions);
-    }
-
-    private ProgrammeInformation Deserialise(string json) {
-        return JsonSerializer.Deserialize<ProgrammeInformation>(json, myJsonOptions) ?? new ProgrammeInformation();
-    }
+    //
+    // -- parsing, etc.
+    //
 
     private byte[] RemoveFrameMarks(byte[] input) {
         var output = new byte[64 * 184];
@@ -82,8 +81,7 @@ internal class MpegFile(string filePath) {
         }
         return output;
     }
-
-
+    
     private byte[] RemovePadding(byte[] input) {
         var len = input.Length;
         if (len != 11776) throw new ArgumentException($"Expected length to be 11776: {len}");
@@ -110,11 +108,10 @@ internal class MpegFile(string filePath) {
         }
         return output;
     }
-
-
+    
     private byte[] ReadData() {
         var buffer = new byte[12032];
-        using var stream = File.OpenRead(filePath);
+        using var stream = File.OpenRead(FilePath);
         var offset = 0;
         var remaining = buffer.Length;
         while (remaining > 0) {
@@ -127,7 +124,7 @@ internal class MpegFile(string filePath) {
     }
 
     private void WriteBack(byte[] data) {
-        using var stream = File.Open(filePath, FileMode.Open);
+        using var stream = File.Open(FilePath, FileMode.Open);
         stream.Position = 0;
         stream.Write(data, 0, data.Length);
         stream.Flush();
