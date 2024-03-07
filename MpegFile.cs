@@ -14,6 +14,8 @@ internal class MpegFile {
 
     public string Error { get; private set; } = "";
 
+    public bool IsReadSuccess => Metadata != null && Error == "";
+
     public MpegFile(string filePath) {
         FilePath = filePath;
         ReadAndParseMetadata();
@@ -22,10 +24,15 @@ internal class MpegFile {
     private void ReadAndParseMetadata() {
         try {
             Error = "";
+            Metadata = null;
+            if (!File.Exists(FilePath)) {
+                Error = "File not found.";
+                return;
+            }
             var rawData = ReadData();
             var noMarks = RemoveFrameMarks(rawData);
             var noPadding = RemovePadding(noMarks);
-            var json = System.Text.Encoding.ASCII.GetString(noPadding);
+            var json = Encoding.ASCII.GetString(noPadding);
             Metadata = JsonSerializer.Deserialize<ProgrammeInformation>(json, myJsonOptions);
         }
         catch (Exception e) {
@@ -70,11 +77,10 @@ internal class MpegFile {
         output[j++] = 0x10;
         for (var i = 0; i < input.Length; i++) {
             if (i % 184 == 0 && i > 0) {
-                var seq = ((i / 184) % 16) + 0x10; // cycles through 0x10 -> 0x1F
-                //Console.WriteLine($"Seq = {seq} = {(seq + 0x10):X}");
                 output[j++] = 0x47;
                 output[j++] = 0x1F;
                 output[j++] = 0xFA;
+                var seq = ((i / 184) % 16) + 0x10; // cycles through 0x10 -> 0x1F
                 output[j++] = (byte)seq;
             }
             output[j++] = input[i];
